@@ -5,15 +5,16 @@ import hevy from './data/hevy.json';
 import { applyModelLook, MODEL_LOOK_SEED } from './modelLook';
 import { applySwimmer, SWIMMER_SEED } from './swimmer';
 import {
-  BodyWeight, DEFAULT_SETTINGS, Exercise, PlannedDay, PlannedExercise, Program, Settings, WSet, Workout, WorkoutExercise, uid,
+  BodyWeight, DEFAULT_SETTINGS, Exercise, Person, PlannedDay, PlannedExercise, Program, Settings, WSet, Workout, WorkoutExercise, uid,
 } from './types';
 import { e1rm } from './stats';
 import { playRestEnd } from './sound';
 import { previousSets } from './carry';
+import { personFactor, scaleWeight, switchPerson, workoutsFor } from './people';
 
 export interface Rest { endsAt: number; total: number }
 interface State {
-  ready: boolean; exercises: Exercise[]; programs: Program[]; workouts: Workout[]; bodyweight: BodyWeight[];
+  ready: boolean; exercises: Exercise[]; programs: Program[]; workouts: Workout[]; allWorkouts: Workout[]; bodyweight: BodyWeight[];
   settings: Settings; open: Workout | null; rest: Rest | null; owner: boolean;
 }
 
@@ -22,7 +23,7 @@ const tabId = uid();
 const readLS = <T>(k: string, fb: T): T => { try { const v = localStorage.getItem(k); return v ? { ...fb, ...JSON.parse(v) } : fb; } catch { return fb; } };
 
 let state: State = {
-  ready: false, exercises: [], programs: [], workouts: [], bodyweight: [],
+  ready: false, exercises: [], programs: [], workouts: [], allWorkouts: [], bodyweight: [],
   settings: readLS(LS_SETTINGS, DEFAULT_SETTINGS), open: null, rest: null, owner: true,
 };
 const listeners = new Set<() => void>();
@@ -75,8 +76,25 @@ async function reload() {
   const [exercises, programs, workouts, bodyweight] = await Promise.all([
     db.getAll<Exercise>('exercises'), db.getAll<Program>('programs'), db.getAll<Workout>('workouts'), db.getAll<BodyWeight>('bodyweight'),
   ]);
-  set({ exercises: exercises.sort((a, b) => a.name.localeCompare(b.name)), programs, workouts: workouts.sort((a, b) => b.startedAt - a.startedAt), bodyweight: bodyweight.sort((a, b) => a.date.localeCompare(b.date)) });
+  const allWorkouts = workouts.sort((a, b) => b.startedAt - a.startedAt);
+  set({ exercises: exercises.sort((a, b) => a.name.localeCompare(b.name)), programs, allWorkouts, workouts: workoutsFor(allWorkouts, state.settings.activePersonId), bodyweight: bodyweight.sort((a, b) => a.date.localeCompare(b.date)) });
 }
+
+// ---- people ----
+export const activePerson = (): Person => state.settings.people.find((p) => p.id === state.settings.activePersonId) ?? state.settings.people[0];
+/** Switch who is training. Not allowed while a workout is open. */
+export function selectPerson(id: string) {
+  if (state.open) return;
+  updateSettings(switchPerson(state.settings, id));
+  set({ workouts: workoutsFor(state.allWorkouts, state.settings.activePersonId) });
+}
+export function updatePerson(id: string, p: Partial<Pick<Person, 'birthYear' | 'sex' | 'weightKg'>>) {
+  updateSettings({ people: state.settings.people.map((x) => (x.id === id ? { ...x, ...p } : x)) });
+}
+const startWeight = (exerciseId: string) => {
+  const e = exerciseById(exerciseId);
+  return e ? scaleWeight(e.defaultWeight, personFactor(activePerson()), e.isBarbell) : 0;
+};
 export async function init() {
   let exercises = await db.getAll<Exercise>('exercises');
   let programs = await db.getAll<Program>('programs');
@@ -152,7 +170,7 @@ function buildExercise(order: number, exerciseId: string, pe: PlannedExercise | 
   const prevWarm = prev?.filter((s) => s.type === 'warmup') ?? [];
   const sets: WSet[] = [];
   const nWarm = pe?.warmupSets ?? 0, nWork = pe?.workingSets ?? 3;
-  const dw = exerciseById(exerciseId)?.defaultWeight ?? 0;
+  const dw = startWeight(exerciseId);
   const reps = pe ? Math.round((pe.repMin + pe.repMax) / 2) : 10;
   const warmW = Math.round((dw * 0.6) / 2.5) * 2.5;
   for (let i = 0; i < nWarm; i++) sets.push(mkSet(sets.length, 'warmup', prevWarm[i] ?? prevWork[0], null, { weight: warmW, reps }));
@@ -165,7 +183,7 @@ export function startWorkout(day: PlannedDay) {
   const planned = [...day.exercises].sort((a, b) => a.order - b.order);
   const open: Workout = {
     id: uid(), programId: prog?.id ?? null, plannedDayId: day.id, week: day.week, dayName: day.dayName,
-    startedAt: Date.now(), endedAt: null, notes: '', bodyWeight: null,
+    startedAt: Date.now(), endedAt: null, notes: '', bodyWeight: null, personId: state.settings.activePersonId,
     exercises: withSlots(planned.map(effectiveExerciseId)).map(([eid, slot], i) => buildExercise(i, eid, planned[i], slot, day.dayName)),
   };
   claimOwner();
@@ -191,7 +209,7 @@ export function toggleDone(weId: string, setId: string) {
   }
 }
 export function addSet(weId: string, type: 'warmup' | 'working' = 'working') {
-  mutateOpen((w) => ({ ...w, exercises: w.exercises.map((we) => we.id !== weId ? we : { ...we, sets: [...we.sets, mkSet(we.sets.length, type, we.sets[we.sets.length - 1], null, { weight: exerciseById(we.exerciseId)?.defaultWeight ?? 0, reps: 10 })] }) }));
+  mutateOpen((w) => ({ ...w, exercises: w.exercises.map((we) => we.id !== weId ? we : { ...we, sets: [...we.sets, mkSet(we.sets.length, type, we.sets[we.sets.length - 1], null, { weight: startWeight(we.exerciseId), reps: 10 })] }) }));
 }
 export function removeSet(weId: string, setId: string) {
   mutateOpen((w) => ({ ...w, exercises: w.exercises.map((we) => we.id !== weId ? we : { ...we, sets: we.sets.filter((s) => s.id !== setId).map((s, i) => ({ ...s, index: i })) }) }));
@@ -285,7 +303,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 // ---- exercises / programs / bodyweight ----
 export async function saveExercise(e: Exercise) { await db.put('exercises', e); await reload(); changed(); }
 export async function mergeExercise(fromId: string, intoId: string) {
-  const ws = state.workouts.filter((w) => w.exercises.some((we) => we.exerciseId === fromId))
+  const ws = state.allWorkouts.filter((w) => w.exercises.some((we) => we.exerciseId === fromId))
     .map((w) => ({ ...w, exercises: w.exercises.map((we) => we.exerciseId === fromId ? { ...we, exerciseId: intoId } : we) }));
   await db.putMany('workouts', ws);
   const progs = state.programs.map((p) => ({ ...p, days: p.days.map((d) => ({ ...d, exercises: d.exercises.map((pe) => ({ ...pe, exerciseId: pe.exerciseId === fromId ? intoId : pe.exerciseId, subExerciseIds: pe.subExerciseIds.map((s) => s === fromId ? intoId : s) })) })) }));

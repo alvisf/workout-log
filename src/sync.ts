@@ -32,7 +32,7 @@ const check = (name: string, color: string) => ({ name, type: 'checkbox', option
 const WORKOUT_FIELDS = [
   { name: 'id', type: 'singleLineText' }, num('startedAt'), num('endedAt'), { name: 'dayName', type: 'singleLineText' }, num('week'),
   { name: 'programId', type: 'singleLineText' }, { name: 'plannedDayId', type: 'singleLineText' }, { name: 'notes', type: 'multilineText' },
-  dec('bodyWeight'), { name: 'exercises', type: 'multilineText' }, num('updatedAt'), check('deleted', 'redBright'),
+  dec('bodyWeight'), { name: 'exercises', type: 'multilineText' }, num('updatedAt'), check('deleted', 'redBright'), { name: 'personId', type: 'singleLineText' },
 ];
 const BW_FIELDS = [{ name: 'id', type: 'singleLineText' }, { name: 'date', type: 'singleLineText' }, dec('kg'), num('updatedAt'), check('deleted', 'redBright')];
 
@@ -57,6 +57,8 @@ function workoutRow(w: Workout): Row {
   return {
     id: w.id, startedAt: w.startedAt, endedAt: w.endedAt, dayName: w.dayName ?? '', week: w.week, programId: w.programId ?? '', plannedDayId: w.plannedDayId ?? '',
     notes: w.notes, bodyWeight: w.bodyWeight, exercises: JSON.stringify(exercises), updatedAt: w.updatedAt ?? Date.now(), deleted: false,
+    // Only sent for Mom and Dad, so an Airtable table without this column keeps working for 'me'.
+    ...(w.personId && w.personId !== 'me' ? { personId: w.personId } : {}),
   };
 }
 function workoutFromRow(f: Row, newEx: Exercise[]): Workout {
@@ -77,6 +79,7 @@ function workoutFromRow(f: Row, newEx: Exercise[]): Workout {
     week: f.week == null || f.week === '' ? null : Number(f.week), dayName: String(f.dayName || '') || null,
     startedAt: Number(f.startedAt) || 0, endedAt: f.endedAt == null || f.endedAt === '' ? null : Number(f.endedAt),
     notes: String(f.notes ?? ''), bodyWeight: f.bodyWeight == null || f.bodyWeight === '' ? null : Number(f.bodyWeight), exercises, updatedAt: Number(f.updatedAt) || 0,
+    personId: String(f.personId || '') || 'me',
   };
 }
 const bwRow = (b: BodyWeight): Row => ({ id: b.date, date: b.date, kg: b.kg, updatedAt: b.updatedAt ?? Date.now(), deleted: false });
@@ -130,7 +133,7 @@ async function pull() {
     const id = String(f.id || ''); if (!id) continue;
     const upd = Number(f.updatedAt) || 0;
     const p = pending[`workouts:${id}`]; if (p && p.at >= upd) continue;
-    const mine = st.workouts.find((w) => w.id === id); if (mine && (mine.updatedAt ?? 0) >= upd) continue;
+    const mine = st.allWorkouts.find((w) => w.id === id); if (mine && (mine.updatedAt ?? 0) >= upd) continue;
     if (f.deleted) { if (mine) wDels.push(id); } else wPuts.push(workoutFromRow(f, newEx));
   }
   for (const f of bRows) {
@@ -168,7 +171,7 @@ export async function pushAll(): Promise<void> {
   const st = getState();
   queue.set((q) => {
     const n = { ...q };
-    st.workouts.filter((w) => w.endedAt !== null).forEach((w) => { n[`workouts:${w.id}`] = { kind: 'put', store: 'workouts', id: w.id, value: w, at: w.updatedAt ?? Date.now() }; });
+    st.allWorkouts.filter((w) => w.endedAt !== null).forEach((w) => { n[`workouts:${w.id}`] = { kind: 'put', store: 'workouts', id: w.id, value: w, at: w.updatedAt ?? Date.now() }; });
     st.bodyweight.forEach((b) => { n[`bodyweight:${b.date}`] = { kind: 'put', store: 'bodyweight', id: b.date, value: b, at: b.updatedAt ?? Date.now() }; });
     return n;
   });

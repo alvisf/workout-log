@@ -49,7 +49,7 @@ export default function App() {
     <F7App theme="ios" darkMode="auto" colors={{ primary: ACCENT }} className="app">
       <View main className="safe-areas">
         <Page>
-          <Navbar title="Lift Log" />
+          <Navbar title={settings.activePersonId === 'me' ? 'Lift Log' : `Lift Log · ${settings.people.find((p) => p.id === settings.activePersonId)?.name ?? ''}`} />
           <Toolbar tabbar icons bottom>
             {(['home', 'workout', 'settings'] as Tab[]).map((k) => (
               <Link key={k} tabLink tabLinkActive={tab === k || (k === 'home' && tab === 'program')} aria-current={tab === k} onClick={() => setTab(k)}>

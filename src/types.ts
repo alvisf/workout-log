@@ -34,7 +34,19 @@ export interface Workout {
   id: string; programId: string | null; plannedDayId: string | null; week: number | null; dayName: string | null;
   startedAt: number; endedAt: number | null; notes: string; bodyWeight: number | null; exercises: WorkoutExercise[];
   updatedAt?: number;
+  personId?: string; // missing = 'me' (workouts from before profiles)
 }
+
+export interface Person {
+  id: string; name: string; birthYear: number; sex: 'male' | 'female'; weightKg: number;
+  progress: { currentWeek: number; doneDays: string[] }; // saved while another person is active
+}
+
+export const DEFAULT_PEOPLE: Person[] = [
+  { id: 'me', name: 'Me', birthYear: 1999, sex: 'male', weightKg: 74, progress: { currentWeek: 1, doneDays: [] } },
+  { id: 'mom', name: 'Mom', birthYear: 1971, sex: 'female', weightKg: 62, progress: { currentWeek: 1, doneDays: [] } },
+  { id: 'dad', name: 'Dad', birthYear: 1969, sex: 'male', weightKg: 75, progress: { currentWeek: 1, doneDays: [] } },
+];
 
 export interface BodyWeight { date: string; kg: number; updatedAt?: number }
 
@@ -47,6 +59,7 @@ export interface Settings {
   lastBackupAt: number; dismissedBackup: number; installDismissed: boolean; notifAsked: boolean;
   profile: { age: number; heightCm: number; weightKg: number; trainingMonths: number; sex?: 'male' | 'female'; factor?: number }; // factor: start-weight scale last applied, relative to the 74 kg, 27 y, male baseline
   seeded: string[];
+  people: Person[]; activePersonId: string;
 }
 
 export type RestState = { endsAt: number; total: number } | null;
@@ -58,6 +71,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'system', accent: '#2f80ed', lang: 'en',
   lastBackupAt: Date.now(), dismissedBackup: 0, installDismissed: false, notifAsked: false,
   profile: { age: 27, heightCm: 174, weightKg: 74, trainingMonths: 3 }, seeded: [],
+  people: DEFAULT_PEOPLE, activePersonId: 'me',
 };
 
 export const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36));

@@ -76,6 +76,9 @@ main { padding-bottom: calc(var(--ll-tabbar-h) + 12px); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 hr { border: none; border-top: 1px solid var(--line); margin: 6px 0; }
 .toolbar.tabbar, .navbar-bg { background: var(--f7-page-bg-color); }
+.seg { display: flex; gap: 4px; padding: 4px; background: var(--card); border-radius: 12px; }
+.seg button { flex: 1; min-height: 40px; box-shadow: none; background: transparent; }
+.seg button.on { background: var(--accent); color: #fff; font-weight: 600; }
 .ex-head .small.danger { min-width: 44px; min-height: 44px; }
 .sets td:last-child { padding-left: 6px; } .sets td:last-child .tiny { min-width: 40px; min-height: 44px; }
 .toolbar .tabbar-label { font-size: 10px; letter-spacing: -.01em; }

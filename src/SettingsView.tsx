@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { t } from './i18n';
-import { activeProgram, deleteAll, updateSettings, useStore } from './store';
+import { activeProgram, deleteAll, selectPerson, updatePerson, updateSettings, useStore } from './store';
 import { toHevyCsv } from './export';
 import { saveFile } from './csvutil';
 import { localDate } from './stats';
@@ -37,6 +37,40 @@ function SyncSection() {
   );
 }
 
+/** Number box that lets you type freely and saves only values in range. */
+function NumField({ label, value, min, max, onSave }: { label: string; value: number; min: number; max: number; onSave: (n: number) => void }) {
+  const [text, setText] = useState(String(value));
+  const [shown, setShown] = useState(value);
+  if (shown !== value) { setShown(value); setText(String(value)); }
+  const valid = (v: string) => v !== '' && Number.isFinite(Number(v)) && Number(v) >= min && Number(v) <= max;
+  return (
+    <label className="row switch"><span>{label}</span>
+      <input type="number" inputMode="decimal" min={min} max={max} value={text}
+        onChange={(e) => { setText(e.target.value); if (valid(e.target.value)) onSave(Number(e.target.value)); }}
+        onBlur={() => setText(String(value))} />
+    </label>
+  );
+}
+
+function PeopleSection() {
+  const s = useStore((x) => x.settings);
+  const open = useStore((x) => x.open);
+  const p = s.people.find((x) => x.id === s.activePersonId) ?? s.people[0];
+  return (
+    <section><h2>{t('people')}</h2>
+      <div className="seg" role="radiogroup" aria-label={t('people')}>
+        {s.people.map((x) => (
+          <button key={x.id} role="radio" aria-checked={x.id === p.id} className={x.id === p.id ? 'on' : ''} disabled={!!open && x.id !== p.id} onClick={() => selectPerson(x.id)}>{x.name}</button>
+        ))}
+      </div>
+      <p className="muted small">{open ? t('peopleLocked') : t('peopleNote')}</p>
+      <NumField key={`${p.id}-born`} label={t('born')} value={p.birthYear} min={1920} max={2020} onSave={(n) => updatePerson(p.id, { birthYear: Math.round(n) })} />
+      <NumField key={`${p.id}-kg`} label={t('bodyWeightKg')} value={p.weightKg} min={30} max={250} onSave={(n) => updatePerson(p.id, { weightKg: n })} />
+      <label className="row switch"><span>{t('sex')}</span><select value={p.sex} onChange={(e) => updatePerson(p.id, { sex: e.target.value === 'female' ? 'female' : 'male' })}><option value="male">{t('male')}</option><option value="female">{t('female')}</option></select></label>
+    </section>
+  );
+}
+
 export default function SettingsView() {
   const s = useStore((x) => x.settings);
   const workouts = useStore((x) => x.workouts);
@@ -51,6 +85,7 @@ export default function SettingsView() {
   return (
     <div className="view">
       <h1>{t('settings')}</h1>
+      <PeopleSection />
       <section><h2>{t('workout')}</h2>
         {notif && Notification.permission !== 'granted' && <button className="small" onClick={() => void Notification.requestPermission().then(() => updateSettings({ notifAsked: true }))}>Allow notifications</button>}
       </section>
